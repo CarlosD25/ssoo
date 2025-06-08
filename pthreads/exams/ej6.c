@@ -1,0 +1,169 @@
+//Lenguaje C
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <string.h>
+#include <stdbool.h>
+
+#define TAM 64
+#define n_pthreads 3
+
+//Global variables
+int reading;
+bool must_break;
+
+pthread_t* vec_pthreads;
+
+char n_lines[3][TAM];
+
+char vec_keywords[][TAM]={"return","main","include","int","for","while"};
+const char* coment = "//";
+
+//Global pthreads variables
+int line=0;
+int keywords=0;
+int comments=0;
+
+//Main declaration function
+void reading_file();
+void allocate_memory();
+void free_memory();
+
+//Pthreads declaration functions
+void* f_lines(void*);
+void* f_keywords(void*);
+void* f_comments(void*);
+
+
+//Barriers
+pthread_barrier_t barrier_1;
+pthread_barrier_t barrier_2;
+
+int main(int argc, char const *argv[]){
+
+    pthread_barrier_init(&barrier_1, NULL, n_pthreads+1);
+    pthread_barrier_init(&barrier_2, NULL, n_pthreads+1);
+
+    void*(*vector[])(void*)={f_lines,f_keywords,f_comments};
+    allocate_memory();
+
+    for(int i=0;i<n_pthreads;i++){
+        pthread_create(&vec_pthreads[i],NULL,vector[i],NULL);
+    }
+
+    reading_file();
+
+    for(int i=0;i<n_pthreads;i++){
+        pthread_join(vec_pthreads[i],NULL);
+    }
+
+    printf("Total of lines: %d\n",line);
+    printf("Total of comments: %d\n",comments);
+    printf("Total of keywords: %d\n",keywords);
+
+    pthread_barrier_destroy(&barrier_1);
+    pthread_barrier_destroy(&barrier_2);
+
+    free_memory();
+
+
+
+    return 0;
+}
+
+void reading_file(){
+
+    FILE* file=fopen("ej6.txt","r");
+    if(!file){perror("Error in file");exit(EXIT_FAILURE);}
+
+    while(true){
+        reading=0;
+        for(int i=0;i<3;i++){
+            if(!fgets(n_lines[i],TAM,file)){
+                break;
+            }
+            //Important
+            n_lines[i][strcspn(n_lines[i], "\n")] = '\0';
+            reading++;
+        }
+
+        if(!reading) must_break=true;
+        pthread_barrier_wait(&barrier_1);
+        if(must_break) break;
+        pthread_barrier_wait(&barrier_2);
+
+    }
+    fclose(file);
+
+}
+
+
+void allocate_memory(){
+    vec_pthreads=calloc(n_pthreads,sizeof(pthread_t));
+    if(vec_pthreads==NULL){
+        perror("There isn't memory");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void* f_lines(void*){
+    while (true){
+      
+      pthread_barrier_wait(&barrier_1);
+      if(must_break) break;
+        
+        line+=reading;
+      pthread_barrier_wait(&barrier_2);
+
+    }
+
+    pthread_exit(0);
+    
+}
+
+void* f_keywords(void* arg){
+
+    while(true){
+
+        pthread_barrier_wait(&barrier_1);
+        if(must_break) break;
+
+        for(int i=0;i<reading;i++){
+            for(int j=0;j<6;j++){
+                if(strstr(n_lines[i],vec_keywords[j])) keywords++;
+            }
+        }
+
+        pthread_barrier_wait(&barrier_2);
+
+    }
+
+    pthread_exit(0);
+
+}
+
+void* f_comments(void* arg){
+   
+    while(true){
+
+        pthread_barrier_wait(&barrier_1);
+        if(must_break) break;
+
+        for(int i=0;i<reading;i++){
+            
+            if(strstr(n_lines[i],coment)) comments++;
+            
+        }
+
+        pthread_barrier_wait(&barrier_2);
+
+    }
+
+    pthread_exit(0);
+
+}
+
+void free_memory(){
+    free(vec_pthreads);
+}
